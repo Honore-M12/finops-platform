@@ -1,0 +1,22 @@
+# Une Application enfant par tenant. Ce fichier vit dans apps/team-a.yaml
+# du repo Git ; le finops-root ci-dessus la découvre automatiquement.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finopspolicy-team-a
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Honore-M12/finops-platform.git
+    targetRevision: main
+    path: manifests/team-a          # contient le FinOpsPolicy CR de ce tenant
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-a
+  syncPolicy:
+    automated:
+      selfHeal: true                # gouvernance : toute dérive manuelle est écrasée
+      prune: true
+    syncOptions:
+      - CreateNamespace=true

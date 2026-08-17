@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-deny-all-networkpolicy
+spec:
+  rules:
+  - name: deny-all-ingress-per-tenant
+    match:
+      any:
+      - resources:
+          kinds:
+          - Namespace
+          selector:
+            matchLabels:
+              finops-managed: "true"
+    generate:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      name: default-deny-all-ingress
+      namespace: "{{request.object.metadata.name}}"
+      synchronize: true
+      generateExisting: true  # rattrape aussi un namespace déjà existant qui vient
+                               # d'être labellisé, plutôt que de dépendre strictement
+                               # de l'ordre create-puis-label
+      data:
+        spec:
+          podSelector: {}
+          policyTypes:
+          - Ingress
+          # Pas de champ "ingress" : absence de règle d'autorisation entrante
+          # = deny-all en sémantique NetworkPolicy Kubernetes.

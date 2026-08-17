@@ -1,0 +1,48 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: finopspolicies.finops.yougos.io
+spec:
+  group: finops.yougos.io
+  scope: Namespaced
+  names:
+    plural: finopspolicies
+    singular: finopspolicy
+    kind: FinOpsPolicy
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                costThreshold:
+                  type: integer
+                  description: The cost threshold for the policy
+                evaluationWindow:
+                  type: string
+                  description: The evaluation window for the policy
+            status:
+              type: object
+              properties:
+                currentCost:
+                  type: integer
+                  description: The current cost associated with the policy
+                thresholdExceeded:
+                  type: boolean
+                  description: Indicates if the cost threshold has been exceeded
+                exceededSince:
+                  type: string
+                  format: date-time
+                  description: The timestamp when the threshold was exceeded
+                correctiveActionTaken:
+                  type: array
+                  items:
+                    type: string
+                  description: List of corrective actions taken when the threshold is exceeded
+      subresources:
+        status: {}

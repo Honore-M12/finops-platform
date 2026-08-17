@@ -1,0 +1,8 @@
+apiVersion: finops.yougos.io/v1
+kind: FinOpsPolicy
+metadata:
+  name: team-a-policy
+  namespace: team-a
+spec:
+  costThreshold: 100        # a ajuster selon le budget reel du tenant
+  evaluationWindow: "5m"    # fenetre min_over_time cote PromQL

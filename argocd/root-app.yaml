@@ -1,0 +1,26 @@
+# App-of-Apps : une seule Application "racine" surveille un dossier
+# apps/ dans le repo Git. Chaque fichier YAML dans ce dossier est lui-même
+# une Application ArgoCD (une par tenant/namespace). Ajouter un tenant =
+# ajouter un fichier dans apps/, pas de modification manuelle du cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finops-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Honore-M12/finops-platform.git
+    targetRevision: main
+    path: apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
