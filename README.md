@@ -12,17 +12,21 @@ Plateforme de gouvernance FinOps GitOps multi-tenant sur Kubernetes (PFA).
 - `manifests/<tenant>/` — Namespace + CR FinOpsPolicy de chaque tenant
 - `argocd/root-app.yaml` — Application racine (pattern App-of-Apps)
 
-## État (17 août 2026)
+## Prérequis
 
-- [x] CRD FinOpsPolicy (semaines 1-2)
-- [x] Opérateur Kopf fonctionnel, branché sur Prometheus (semaine 4)
-- [x] Kyverno : génération deny-all validée sur `finops-lab` (semaine 5)
-- [ ] Prometheus/Grafana (semaine 5, en cours)
-- [ ] OpenCost (semaine 5)
-- [ ] Validation ArgoCD end-to-end sur ce repo réel
+- Cluster Kubernetes (testé sur k3d/K3s)
+- [ArgoCD](https://argo-cd.readthedocs.io/) installé sur le cluster
+- [Kyverno](https://kyverno.io/) installé sur le cluster
+- Python 3.12+ pour exécuter l'opérateur (`operator/requirements.txt`)
 
-## Avant de pousser
+## Démarrage
 
-Remplace `<ton-user>` par ton vrai nom d'utilisateur GitHub dans :
-- `argocd/root-app.yaml`
-- `apps/team-a.yaml`
+```bash
+kubectl apply -f crds/finopspolicy-crd.yaml
+kubectl apply -f kyverno/generate-deny-all-networkpolicy.yaml
+kubectl apply -f argocd/root-app.yaml
+```
+
+L'Application racine ArgoCD (pattern App-of-Apps) découvre ensuite
+automatiquement les Applications enfants déclarées dans `apps/`, une par
+tenant, et synchronise leurs manifestes depuis `manifests/<tenant>/`.

@@ -1,7 +1,10 @@
 """
 Opérateur FinOpsPolicy - handlers Kopf
-Semaine 4 : branchement réel des briques métier validées le 11-12 août
-sur un vrai @kopf.on.update et un vrai appel HTTP à Prometheus.
+
+Surveille les ressources FinOpsPolicy, interroge Prometheus pour le coût
+courant du namespace concerné, et déclenche une action corrective tracée
+dans le status de la ressource en cas de dépassement de seuil soutenu sur
+la fenêtre d'évaluation configurée.
 """
 
 import json
@@ -17,7 +20,7 @@ SIGNATURE_ANNOTATION = "finops.yougos.io/last-handled-signature"
 
 
 # ---------------------------------------------------------------------------
-# Briques métier (session d'entraînement du 11-12 août, validées par assert)
+# Fonctions métier
 #
 # min_cost() ne sert plus en production : Prometheus calcule déjà le
 # min_over_time côté serveur (voir build_promql). Elle reste uniquement
