@@ -1,0 +1,26 @@
+# Découverte automatique par finops-root (App-of-Apps). Namespace créé
+# automatiquement via CreateNamespace=true - pas de manifeste Namespace
+# séparé nécessaire, ce namespace ne porte pas le label finops-managed
+# (ce n'est pas un tenant applicatif, Kyverno ne le concerne pas).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Honore-M12/finops-platform.git
+    targetRevision: main
+    path: monitoring
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
