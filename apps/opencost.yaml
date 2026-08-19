@@ -1,0 +1,37 @@
+# OpenCost via son chart Helm officiel, deploye par ArgoCD (source Helm
+# directe, pas de manifeste reecrit a la main). Pointe vers le Prometheus
+# deja deploye dans le namespace monitoring plutot que d'en embarquer un
+# second - OpenCost n'inclut pas de Prometheus, il en attend un existant.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opencost
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://opencost.github.io/opencost-helm-chart
+    chart: opencost
+    targetRevision: 1.32.0
+    helm:
+      values: |
+        opencost:
+          prometheus:
+            internal:
+              enabled: true
+              serviceName: prometheus
+              namespaceName: monitoring
+              port: 9090
+          exporter:
+            defaultClusterId: "finops-lab"
+          ui:
+            enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencost
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
