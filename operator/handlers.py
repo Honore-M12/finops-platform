@@ -58,8 +58,11 @@ def extraire_valeur(reponse_json):
 
 def doit_traiter(spec_actuel, derniere_signature):
     """Retourne (a_traiter, signature_actuelle). Signature basée sur spec,
-    jamais sur status (qui change à chaque patch du handler lui-même)."""
-    signature_actuelle = json.dumps(spec_actuel, sort_keys=True)
+    jamais sur status (qui change à chaque patch du handler lui-même).
+    dict(spec_actuel) : Kopf fournit spec comme un objet Spec (Mapping en
+    lecture seule), pas un dict natif - json.dumps() refuse de le
+    sérialiser directement sans cette conversion."""
+    signature_actuelle = json.dumps(dict(spec_actuel), sort_keys=True)
     return signature_actuelle != derniere_signature, signature_actuelle
 
 
@@ -91,7 +94,7 @@ def query_prometheus(promql: str, prometheus_url: str = PROMETHEUS_URL) -> dict:
 
 @kopf.on.create('finops.yougos.io', 'v1', 'finopspolicies')
 def on_finops_create(spec, meta, patch, logger, **kwargs):
-    signature = json.dumps(spec, sort_keys=True)
+    signature = json.dumps(dict(spec), sort_keys=True)
     patch.metadata.annotations[SIGNATURE_ANNOTATION] = signature
     logger.info(f"FinOpsPolicy creee dans {meta['namespace']}, signature initiale enregistree.")
 

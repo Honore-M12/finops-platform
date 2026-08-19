@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY handlers.py .
 
-CMD ["kopf", "run", "handlers.py", "--verbose"]
+CMD ["kopf", "run", "handlers.py", "--verbose", "--all-namespaces"]
