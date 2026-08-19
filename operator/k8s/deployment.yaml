@@ -1,0 +1,34 @@
+# Image construite localement (docker build) puis importee directement
+# dans le cluster k3d (k3d image import), sans registre distant - adapte
+# a un environnement de developpement local. imagePullPolicy: Never
+# empeche Kubernetes de tenter un pull externe et force l'usage de
+# l'image deja presente dans le cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finops-operator
+  namespace: finops-system
+  labels:
+    app: finops-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finops-operator
+  template:
+    metadata:
+      labels:
+        app: finops-operator
+    spec:
+      serviceAccountName: finops-operator
+      containers:
+        - name: operator
+          image: finops-operator:local
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
