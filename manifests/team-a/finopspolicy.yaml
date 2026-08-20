@@ -5,4 +5,4 @@ metadata:
   namespace: team-a
 spec:
   costThreshold: 0        # a ajuster selon le budget reel du tenant
-  evaluationWindow: "5m"    # fenetre min_over_time cote PromQL
+  evaluationWindow: "10m"    # fenetre min_over_time cote PromQL
