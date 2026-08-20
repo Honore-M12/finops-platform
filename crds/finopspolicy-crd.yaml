@@ -30,7 +30,7 @@ spec:
               type: object
               properties:
                 currentCost:
-                  type: integer
+                  type: number
                   description: The current cost associated with the policy
                 thresholdExceeded:
                   type: boolean
