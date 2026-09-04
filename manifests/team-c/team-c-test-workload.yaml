@@ -1,11 +1,17 @@
-# Voir team-b/test-workload.yaml pour le raisonnement complet.
+# Profil "cache applicatif" pour team-c : cache memoire-intensif
+# (ex. sessions, resultats de requetes frequentes). Peu de CPU, beaucoup
+# de memoire allouee, replique pour la disponibilite du cache.
+# redis reel plutot qu'une image generique : plus representatif du
+# pattern, et redis fonctionne out-of-the-box sans configuration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-workload
   namespace: team-c
+  labels:
+    finops-role: cache
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: test-workload
@@ -15,12 +21,12 @@ spec:
         app: test-workload
     spec:
       containers:
-        - name: nginx
-          image: nginx:1.27-alpine
+        - name: cache
+          image: redis:7-alpine
           resources:
             requests:
               cpu: 100m
-              memory: 64Mi
+              memory: 512Mi
             limits:
               cpu: 200m
-              memory: 128Mi
+              memory: 768Mi

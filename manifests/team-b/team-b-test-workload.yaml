@@ -1,12 +1,15 @@
-# Charge minimale pour que OpenCost ait quelque chose a mesurer dans
-# team-b. Pas encore pilotee par l'operateur (voir finopspolicy.yaml) -
-# a enrichir si cette equipe sert plus tard a une demonstration d'action
-# corrective en plus de team-a.
+# Profil "worker/batch" pour team-b : traitement en arriere-plan
+# (ex. generation de rapports, traitement de fichiers). CPU-intensif,
+# peu de replicas - a l'oppose du profil API stateless de team-a.
+# busybox + boucle infinie simule une charge de travail continue sans
+# necessiter une vraie image applicative pour la demonstration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-workload
   namespace: team-b
+  labels:
+    finops-role: worker-batch
 spec:
   replicas: 1
   selector:
@@ -18,12 +21,13 @@ spec:
         app: test-workload
     spec:
       containers:
-        - name: nginx
-          image: nginx:1.27-alpine
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo traitement en cours; sleep 5; done"]
           resources:
             requests:
-              cpu: 100m
-              memory: 64Mi
+              cpu: 500m
+              memory: 256Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 1000m
+              memory: 512Mi

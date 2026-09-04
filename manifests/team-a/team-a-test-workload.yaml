@@ -1,13 +1,14 @@
-# Charge de test pour OpenCost (mesure de cout) ET cible reelle de
-# l'action corrective de l'operateur (scale-down/rollback). replicas: 3
-# au depart pour que le scale-down vers minReplicas soit visible et ait
-# un effet mesurable sur namespace_cost_total. A remplacer par de vraies
-# charges applicatives du tenant.
+# Profil "API stateless" pour team-a : service front expose, replique
+# pour la disponibilite/charge, empreinte legere par instance. C'est ce
+# profil qui sert aussi de cible reelle a l'action corrective de
+# l'operateur (scale-down/rollback), demontre en conditions reelles.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-workload
   namespace: team-a
+  labels:
+    finops-role: api-stateless
 spec:
   replicas: 3
   selector:
