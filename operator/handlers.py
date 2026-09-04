@@ -11,6 +11,14 @@ Deux couches de lissage temporel protègent contre les faux positifs :
   1. Intra-fenêtre : min_over_time côté Prometheus (voir build_promql)
   2. Inter-cycles : confirmation sur `consecutiveCyclesThreshold` cycles
      consécutifs avant toute action destructive (garde-fou anti-flapping)
+
+La ré-évaluation est déclenchée par deux sources independantes, qui
+partagent le meme coeur de logique (evaluate_and_act) :
+  - un changement reel de spec (on_update), pour une reactivite immediate
+    coherente avec la philosophie GitOps du projet
+  - un timer periodique (toutes les TIMER_INTERVAL_SECONDS), decouple de
+    evaluationWindow qui ne concerne que le lissage cote PromQL - c'est le
+    timer qui alimente concretement le compteur consecutiveExceedances
 """
 
 import json
@@ -26,6 +34,8 @@ PROMETHEUS_URL = "http://prometheus.monitoring.svc:9090"
 CLUSTER_LABEL = "finops-lab"
 SIGNATURE_ANNOTATION = "finops.yougos.io/last-handled-signature"
 CONSECUTIVE_CYCLES_DEFAULT = 3
+TIMER_INTERVAL_SECONDS = 60  # cadence de reevaluation, decouplee de evaluationWindow
+TIMER_INITIAL_DELAY_SECONDS = 30  # laisse le temps a Prometheus/OpenCost d'etre prets au demarrage
 
 
 # ---------------------------------------------------------------------------
@@ -145,9 +155,9 @@ def scale_deployment(namespace: str, name: str, replicas: int, apps_client=None)
 # ---------------------------------------------------------------------------
 # Cœur de la logique de décision + action
 #
-# Fonction volontairement séparée du handler on_update : elle sera
-# réutilisée telle quelle par le futur timer périodique (point 4.2),
-# sans duplication de logique.
+# Fonction volontairement séparée des handlers Kopf : réutilisée à
+# l'identique par on_finops_update et on_finops_timer, sans duplication
+# de logique entre les deux sources de déclenchement.
 # ---------------------------------------------------------------------------
 
 def evaluate_and_act(namespace, spec, status, patch, logger):
@@ -195,9 +205,12 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
                         historique = status.get('correctiveActionTaken') or []
                         patch.status['correctiveActionTaken'] = historique + [entree]
                         # Etat pré-action stocké pour le rollback automatique.
-                        # Limitation documentee : si les replicas sont modifies
-                        # manuellement pendant l'action, le rollback restaurera
-                        # quand meme cette valeur (pas de detection de conflit).
+                        # La detection de conflit au moment du rollback (voir
+                        # branche OK ci-dessous) verifie que les replicas
+                        # n'ont pas ete modifies manuellement entre-temps
+                        # avant de restaurer - limitation residuelle : rien
+                        # ne protege contre une modification manuelle qui
+                        # tomberait pile sur min_replicas par coincidence.
                         patch.status['preActionState'] = {'replicas': replicas_avant}
                         patch.status['actionState'] = 'ACTION_TAKEN'
                         logger.warning(entree)
@@ -213,19 +226,38 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
             pre_action = status.get('preActionState') or {}
             replicas_a_restaurer = pre_action.get('replicas')
             if target and replicas_a_restaurer is not None:
-                succes = scale_deployment(namespace, target, replicas_a_restaurer)
-                if succes:
-                    entree = entry_rollback(target, replicas_a_restaurer)
-                    historique = status.get('correctiveActionTaken') or []
-                    patch.status['correctiveActionTaken'] = historique + [entree]
-                    patch.status['actionState'] = 'NORMAL'
-                    patch.status['preActionState'] = None
-                    logger.info(entree)
-                else:
+                replicas_actuels = get_deployment_replicas(namespace, target)
+                if replicas_actuels is None:
+                    logger.error(f"Deployment {target} introuvable, rollback impossible.")
+                elif replicas_actuels != min_replicas:
+                    # Detection de conflit : l'etat reel ne correspond pas a
+                    # l'etat post-action attendu (min_replicas). Quelqu'un a
+                    # probablement modifie les replicas manuellement pendant
+                    # que l'action corrective etait active. On ne restaure
+                    # PAS automatiquement par-dessus une intervention humaine
+                    # non tracee - actionState reste ACTION_TAKEN pour
+                    # investigation manuelle plutot que d'ecraser en silence.
                     logger.error(
-                        "Rollback echoue lors du scale: actionState reste "
-                        "ACTION_TAKEN pour investigation manuelle."
+                        f"Conflit detecte avant rollback: {target} a "
+                        f"{replicas_actuels} replicas, attendu {min_replicas} "
+                        f"(etat post-action). Modification manuelle probable "
+                        f"pendant l'action corrective. Rollback automatique "
+                        f"annule, actionState reste ACTION_TAKEN."
                     )
+                else:
+                    succes = scale_deployment(namespace, target, replicas_a_restaurer)
+                    if succes:
+                        entree = entry_rollback(target, replicas_a_restaurer)
+                        historique = status.get('correctiveActionTaken') or []
+                        patch.status['correctiveActionTaken'] = historique + [entree]
+                        patch.status['actionState'] = 'NORMAL'
+                        patch.status['preActionState'] = None
+                        logger.info(entree)
+                    else:
+                        logger.error(
+                            "Rollback echoue lors du scale: actionState reste "
+                            "ACTION_TAKEN pour investigation manuelle."
+                        )
             else:
                 logger.error(
                     "Retour sous le seuil mais preActionState absent: rollback "
@@ -276,6 +308,25 @@ def on_finops_update(spec, meta, status, patch, logger, **kwargs):
     # Toujours mettre à jour la signature en dernier, pour que le patch de
     # status déclenché par ce même appel soit ignoré au prochain passage.
     patch.metadata.annotations[SIGNATURE_ANNOTATION] = signature_actuelle
+
+
+@kopf.timer(
+    'finops.yougos.io', 'v1', 'finopspolicies',
+    interval=TIMER_INTERVAL_SECONDS,
+    initial_delay=TIMER_INITIAL_DELAY_SECONDS,
+)
+def on_finops_timer(spec, meta, status, patch, logger, **kwargs):
+    """Source periodique d'evaluation, independante de tout changement de
+    spec. C'est ce timer qui alimente concretement consecutiveExceedances
+    au fil du temps - sans lui, le compteur ne progresse que sur des
+    changements manuels de la FinOpsPolicy (voir on_finops_update).
+
+    Limitation documentee (YAGNI) : si ce timer et un vrai changement de
+    spec se declenchent quasi simultanement, un double comptage de cycle
+    est possible en theorie. Cas rare, pas de mecanisme de debounce ajoute
+    pour eviter une complexite disproportionnee par rapport au risque."""
+    namespace_cible = meta['namespace']
+    evaluate_and_act(namespace_cible, spec, status, patch, logger)
 
 
 @kopf.on.delete('finops.yougos.io', 'v1', 'finopspolicies')
