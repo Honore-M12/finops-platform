@@ -1,13 +1,15 @@
-# Charge de test minimale pour que OpenCost ait quelque chose a mesurer
-# dans team-a et permettre de valider le handler Kopf en conditions
-# reelles. A remplacer par de vraies charges applicatives du tenant.
+# Charge de test pour OpenCost (mesure de cout) ET cible reelle de
+# l'action corrective de l'operateur (scale-down/rollback). replicas: 3
+# au depart pour que le scale-down vers minReplicas soit visible et ait
+# un effet mesurable sur namespace_cost_total. A remplacer par de vraies
+# charges applicatives du tenant.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-workload
   namespace: team-a
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: test-workload

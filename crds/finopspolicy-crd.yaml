@@ -19,6 +19,9 @@ spec:
           properties:
             spec:
               type: object
+              required:
+                - costThreshold
+                - evaluationWindow
               properties:
                 costThreshold:
                   type: integer
@@ -26,6 +29,26 @@ spec:
                 evaluationWindow:
                   type: string
                   description: The evaluation window for the policy
+                targetDeployment:
+                  type: string
+                  description: >-
+                    Nom du Deployment cible dans le namespace de la policy,
+                    sur lequel l'action corrective (scale-down) est appliquee
+                minReplicas:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Nombre de replicas cible applique au Deployment lors du
+                    scale-down corrective
+                consecutiveCyclesThreshold:
+                  type: integer
+                  minimum: 1
+                  default: 3
+                  description: >-
+                    Nombre de cycles de depassement consecutifs requis avant
+                    de declencher l'action corrective (garde-fou anti-flapping,
+                    lissage inter-cycles complementaire au min_over_time
+                    intra-fenetre)
             status:
               type: object
               properties:
@@ -43,6 +66,29 @@ spec:
                   type: array
                   items:
                     type: string
-                  description: List of corrective actions taken when the threshold is exceeded
+                  description: >-
+                    Journal d'audit des actions correctives et rollbacks
+                    effectues (append-only)
+                consecutiveExceedances:
+                  type: integer
+                  description: >-
+                    Compteur de cycles de depassement consecutifs, remis a
+                    zero des qu'un cycle repasse sous le seuil
+                actionState:
+                  type: string
+                  enum: ["NORMAL", "ACTION_TAKEN"]
+                  description: >-
+                    Etat de l'action corrective : NORMAL si aucune action
+                    active, ACTION_TAKEN si un scale-down est actif en
+                    attendant un retour sous le seuil
+                preActionState:
+                  type: object
+                  nullable: true
+                  properties:
+                    replicas:
+                      type: integer
+                  description: >-
+                    Etat du Deployment cible juste avant l'action corrective,
+                    utilise pour le rollback automatique
       subresources:
         status: {}

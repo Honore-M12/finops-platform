@@ -4,5 +4,8 @@ metadata:
   name: team-a-policy
   namespace: team-a
 spec:
-  costThreshold: 0        # a ajuster selon le budget reel du tenant
+  costThreshold: 0        # a ajuster selon le budget reel du tenant (nettoyage restant)
   evaluationWindow: "10m"    # fenetre min_over_time cote PromQL
+  targetDeployment: test-workload   # cible de l'action corrective (scale-down/rollback)
+  minReplicas: 1                    # replicas cible lors du scale-down
+  consecutiveCyclesThreshold: 3     # cycles consecutifs avant declenchement (anti-flapping)
