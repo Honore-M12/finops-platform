@@ -1,0 +1,27 @@
+# CRDs gerees via GitOps (auparavant appliquees manuellement en bootstrap,
+# hors controle Git - trou de gouvernance corrige ici). sync-wave: "-1"
+# garantit que cette Application est synchronisee AVANT les autres
+# (notamment finopspolicy-team-a), pour eviter qu'un CR reference un champ
+# que la CRD ne connait pas encore.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finops-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Honore-M12/finops-platform.git
+    targetRevision: main
+    path: crds
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
