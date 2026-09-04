@@ -1,0 +1,29 @@
+# Charge minimale pour que OpenCost ait quelque chose a mesurer dans
+# team-b. Pas encore pilotee par l'operateur (voir finopspolicy.yaml) -
+# a enrichir si cette equipe sert plus tard a une demonstration d'action
+# corrective en plus de team-a.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-workload
+  namespace: team-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-workload
+  template:
+    metadata:
+      labels:
+        app: test-workload
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

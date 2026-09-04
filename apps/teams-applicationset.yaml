@@ -1,0 +1,50 @@
+# Extension du principe App-of-Apps pour le multi-tenant : au lieu d'un
+# fichier Application par equipe (repetitif, remplace ici team-a.yaml),
+# un seul generateur decouvre automatiquement chaque dossier
+# manifests/team-* dans Git et cree l'Application correspondante. Ajouter
+# une equipe = ajouter un dossier manifests/team-X/, rien d'autre a
+# toucher dans apps/. finops-root continue d'orchestrer normalement :
+# cet ApplicationSet est lui-meme un des "enfants" decouverts par
+# finops-root, exactement comme crds.yaml, operator.yaml, etc.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: finops-teams
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/Honore-M12/finops-platform.git
+        revision: main
+        directories:
+          - path: manifests/team-*
+  template:
+    metadata:
+      name: 'finopspolicy-{{path.basename}}'
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Honore-M12/finops-platform.git
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      # Meme conflit potentiel que sur team-a (voir historique) : si une
+      # equipe a un test-workload pilote par l'operateur FinOps, ArgoCD
+      # ne doit pas ecraser ses scale-down/rollback. Regle generique,
+      # sans effet sur les equipes qui n'ont pas encore ce Deployment.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          name: test-workload
+          namespace: '{{path.basename}}'
+          jsonPointers:
+            - /spec/replicas
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+        syncOptions:
+          - CreateNamespace=true
