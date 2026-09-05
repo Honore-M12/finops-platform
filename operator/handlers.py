@@ -187,21 +187,23 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
     consecutive = status.get('consecutiveExceedances', 0)
     last_action_at_cycle = status.get('lastActionAtCycle', 0)
     actions_state = dict(status.get('actionsState') or {})
+    baseline = status.get('baselineCostAtTrigger')
 
     def etat_de(target):
         return actions_state.get(target, {'actionState': 'NORMAL', 'preActionState': None})
 
+    une_action_active = any(v['actionState'] == 'ACTION_TAKEN' for v in actions_state.values())
+
+    # minCostInWindow rapporte fidelement la valeur mesuree (min_over_time
+    # sur evaluationWindow), sans interpretation - le nom precedent
+    # "currentCost" etait trompeur, ce n'est jamais le cout instantane.
+    patch.status['minCostInWindow'] = valeur
+
     if decision == "DEPASSEMENT":
         consecutive += 1
         patch.status['consecutiveExceedances'] = consecutive
-        patch.status['currentCost'] = valeur
         patch.status['thresholdExceeded'] = True
 
-        # Meme condition sert au premier declenchement ET a chaque
-        # escalade suivante : il faut re-confirmer sur cycles_threshold
-        # cycles depuis la DERNIERE action, pas seulement depuis le debut
-        # du depassement. last_action_at_cycle=0 au depart -> equivalent
-        # a "depuis le debut" pour la toute premiere action.
         if consecutive - last_action_at_cycle < cycles_threshold:
             logger.warning(
                 f"DEPASSEMENT (cycle {consecutive - last_action_at_cycle}/{cycles_threshold} "
@@ -249,75 +251,104 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
                         patch.status['lastActionAtCycle'] = consecutive
                         logger.warning(entree)
 
+                        # Baseline geleee UNIQUEMENT au premier declenchement
+                        # d'une "campagne" (aucune cible encore active avant
+                        # cette action) : c'est la derniere mesure fiable du
+                        # cout a pleine capacite, avant toute reduction. Les
+                        # escalades suivantes ne l'ecrasent pas.
+                        if not une_action_active:
+                            patch.status['baselineCostAtTrigger'] = valeur
+
     elif decision == "OK":
-        patch.status['consecutiveExceedances'] = 0
-        patch.status['currentCost'] = valeur
-        patch.status['thresholdExceeded'] = False
-        patch.status['lastActionAtCycle'] = 0
+        if not une_action_active:
+            # Rien n'est actif : etat normal confirme, pas de baseline a
+            # gerer.
+            patch.status['consecutiveExceedances'] = 0
+            patch.status['thresholdExceeded'] = False
+            patch.status['lastActionAtCycle'] = 0
+            logger.info(f"OK: min_cost={valeur} <= threshold={cost_threshold}")
 
-        historique_courant = list(status.get('correctiveActionTaken') or [])
-        etats_modifies = False
+        elif baseline is None or baseline <= cost_threshold:
+            # baseline absente (cas limite : action prise avant ce
+            # mecanisme, ou etat legacy) -> pas de raison connue de
+            # bloquer le rollback, on procede normalement. Sinon,
+            # baseline connue et repassee sous le seuil courant :
+            # rollback legitime (voir commentaire ci-dessus).
+            patch.status['consecutiveExceedances'] = 0
+            patch.status['thresholdExceeded'] = False
+            patch.status['lastActionAtCycle'] = 0
+            patch.status['baselineCostAtTrigger'] = None
 
-        for a in actions_spec:
-            target = a['target']
-            min_replicas = a['minReplicas']
-            etat = etat_de(target)
+            historique_courant = list(status.get('correctiveActionTaken') or [])
+            etats_modifies = False
 
-            if etat['actionState'] != 'ACTION_TAKEN':
-                continue
+            for a in actions_spec:
+                target = a['target']
+                min_replicas = a['minReplicas']
+                etat = etat_de(target)
 
-            pre_action = etat.get('preActionState') or {}
-            replicas_a_restaurer = pre_action.get('replicas')
+                if etat['actionState'] != 'ACTION_TAKEN':
+                    continue
 
-            if replicas_a_restaurer is None:
-                logger.error(
-                    f"Retour sous le seuil mais preActionState absent pour {target}: "
-                    f"rollback impossible, actionState reste ACTION_TAKEN."
-                )
-                continue
+                pre_action = etat.get('preActionState') or {}
+                replicas_a_restaurer = pre_action.get('replicas')
 
-            replicas_actuels = get_deployment_replicas(namespace, target)
+                if replicas_a_restaurer is None:
+                    logger.error(
+                        f"Retour sous le seuil mais preActionState absent pour {target}: "
+                        f"rollback impossible, actionState reste ACTION_TAKEN."
+                    )
+                    continue
 
-            if replicas_actuels is None:
-                logger.error(f"Deployment {target} introuvable, rollback impossible.")
+                replicas_actuels = get_deployment_replicas(namespace, target)
 
-            elif replicas_actuels == replicas_a_restaurer:
-                # Rollback deja effectif (ex. ArgoCD a deja restaure Git
-                # avant l'operateur). Idempotence : pas de scale inutile.
-                entree = entry_rollback(target, replicas_a_restaurer)
-                historique_courant.append(entree)
-                actions_state[target] = {'actionState': 'NORMAL', 'preActionState': None}
-                etats_modifies = True
-                logger.info(f"Rollback deja effectif: {target} est deja a {replicas_a_restaurer} replicas.")
+                if replicas_actuels is None:
+                    logger.error(f"Deployment {target} introuvable, rollback impossible.")
 
-            elif replicas_actuels == min_replicas:
-                succes = scale_deployment(namespace, target, replicas_a_restaurer)
-                if succes:
+                elif replicas_actuels == replicas_a_restaurer:
                     entree = entry_rollback(target, replicas_a_restaurer)
                     historique_courant.append(entree)
                     actions_state[target] = {'actionState': 'NORMAL', 'preActionState': None}
                     etats_modifies = True
-                    logger.info(entree)
+                    logger.info(f"Rollback deja effectif: {target} est deja a {replicas_a_restaurer} replicas.")
+
+                elif replicas_actuels == min_replicas:
+                    succes = scale_deployment(namespace, target, replicas_a_restaurer)
+                    if succes:
+                        entree = entry_rollback(target, replicas_a_restaurer)
+                        historique_courant.append(entree)
+                        actions_state[target] = {'actionState': 'NORMAL', 'preActionState': None}
+                        etats_modifies = True
+                        logger.info(entree)
+                    else:
+                        logger.error(
+                            f"Rollback de {target} echoue lors du scale: actionState "
+                            f"reste ACTION_TAKEN pour investigation manuelle."
+                        )
                 else:
                     logger.error(
-                        f"Rollback de {target} echoue lors du scale: actionState "
-                        f"reste ACTION_TAKEN pour investigation manuelle."
+                        f"Conflit detecte avant rollback de {target}: {replicas_actuels} "
+                        f"replicas, ni l'etat post-action ({min_replicas}) ni l'etat "
+                        f"pre-action ({replicas_a_restaurer}). Rollback annule pour cette cible."
                     )
-            else:
-                # Etat inattendu : intervention externe probable. On ne
-                # touche pas au Deployment pour ne pas ecraser une
-                # modification potentiellement volontaire.
-                logger.error(
-                    f"Conflit detecte avant rollback de {target}: {replicas_actuels} "
-                    f"replicas, ni l'etat post-action ({min_replicas}) ni l'etat "
-                    f"pre-action ({replicas_a_restaurer}). Rollback annule pour cette cible."
-                )
 
-        if etats_modifies:
-            patch.status['correctiveActionTaken'] = historique_courant
-            patch.status['actionsState'] = actions_state
+            if etats_modifies:
+                patch.status['correctiveActionTaken'] = historique_courant
+                patch.status['actionsState'] = actions_state
+
         else:
-            logger.info(f"OK: min_cost={valeur} <= threshold={cost_threshold}")
+            # Cout observe bas, mais c'est un artefact de l'action
+            # corrective active : le cout a pleine capacite (baseline
+            # gelee) reste au-dessus du seuil. On NE rollback PAS - sans
+            # ca, le systeme oscillerait indefiniment entre action et
+            # rollback premature (voir limitation decouverte le 2026-09-05
+            # sur team-a).
+            patch.status['thresholdExceeded'] = True
+            logger.info(
+                f"Cout observe ({valeur}) sous le seuil, mais cout a pleine capacite "
+                f"({baseline}) toujours au-dessus de {cost_threshold} - action(s) "
+                f"maintenue(s) active(s), pas de rollback."
+            )
 
     else:
         logger.info("PAS_ASSEZ_DE_DONNEES: aucune metrique sur la fenetre, aucune action.")

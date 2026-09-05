@@ -398,9 +398,108 @@ class TestRollback:
         scale_mock.assert_not_called()
 
 
+class TestMinCostInWindowRapporteFidelement:
+    def test_minCostInWindow_toujours_rapporte_peu_importe_la_decision(self, monkeypatch):
+        status = {}
+        patch, _ = run(base_spec(costThreshold=10), status, monkeypatch, cost_value=15.0)
+        assert patch.status["minCostInWindow"] == 15.0
+
+
+class TestBaselineRollback:
+    """Option B : le rollback se decide sur le cout FIGE au moment du
+    premier declenchement (baselineCostAtTrigger), pas sur le cout
+    observe en direct pendant qu'une action est active - evite
+    l'oscillation decouverte le 2026-09-05 (l'action masque sa propre
+    cause en faisant baisser le cout observe)."""
+
+    def test_baseline_figee_au_premier_declenchement(self, monkeypatch):
+        status = {"consecutiveExceedances": 2}
+        patch, _ = run(
+            base_spec(costThreshold=10), status, monkeypatch,
+            cost_value=17.0, deployment_replicas={"test-workload": 3},
+        )
+        assert patch.status["baselineCostAtTrigger"] == 17.0
+
+    def test_baseline_non_ecrasee_lors_d_une_escalade(self, monkeypatch):
+        """La 2eme cible s'active alors qu'une baseline existe deja :
+        elle ne doit PAS etre remplacee par le cout observe pendant
+        l'escalade (qui est deja partiellement masque par la 1ere
+        action)."""
+        status = {
+            "consecutiveExceedances": 5,
+            "lastActionAtCycle": 3,
+            "baselineCostAtTrigger": 17.0,
+            "actionsState": {"batch-secondaire": {"actionState": "ACTION_TAKEN", "preActionState": {"replicas": 2}}},
+        }
+        patch, _ = run(
+            two_target_spec(costThreshold=10), status, monkeypatch,
+            cost_value=12.0,  # cout partiellement redescendu, mais pas la vraie baseline
+            deployment_replicas={"test-workload": 3},
+        )
+        assert "baselineCostAtTrigger" not in patch.status  # inchangee, pas re-ecrite
+
+    def test_pas_de_rollback_si_baseline_encore_au_dessus_du_seuil(self, monkeypatch):
+        """Cas exact rencontre en prod : le cout observe (masque par
+        l'action) est repasse sous le seuil, mais le cout a pleine
+        capacite (baseline) reste au-dessus. Aucun rollback ne doit
+        avoir lieu."""
+        status = {
+            "actionsState": {"test-workload": {"actionState": "ACTION_TAKEN", "preActionState": {"replicas": 3}}},
+            "baselineCostAtTrigger": 17.0,
+            "correctiveActionTaken": ["entree precedente"],
+        }
+        patch, scale_mock = run(
+            base_spec(costThreshold=10), status, monkeypatch,
+            cost_value=3.0,  # observe bas (masque), mais baseline=17 > seuil=10
+            deployment_replicas={"test-workload": 1},
+        )
+
+        scale_mock.assert_not_called()
+        assert patch.status["thresholdExceeded"] is True
+        assert "correctiveActionTaken" not in patch.status  # aucune nouvelle entree
+
+    def test_rollback_declenche_quand_baseline_repasse_sous_seuil_releve(self, monkeypatch):
+        """Le seuil a ete releve dans Git (ex. recalibrage suite a un
+        ajout de capacite volontaire) : baseline (17.0) est maintenant
+        <= au nouveau costThreshold (20) -> rollback legitime."""
+        status = {
+            "actionsState": {"test-workload": {"actionState": "ACTION_TAKEN", "preActionState": {"replicas": 3}}},
+            "baselineCostAtTrigger": 17.0,
+            "correctiveActionTaken": ["entree precedente"],
+        }
+        patch, scale_mock = run(
+            base_spec(costThreshold=20), status, monkeypatch,
+            cost_value=3.0, deployment_replicas={"test-workload": 1},
+        )
+
+        scale_mock.assert_called_once_with("team-a", "test-workload", 3)
+        assert patch.status["actionsState"]["test-workload"]["actionState"] == "NORMAL"
+        assert patch.status["baselineCostAtTrigger"] is None
+        assert patch.status["thresholdExceeded"] is False
+
+    def test_baseline_reinitialisee_apres_rollback_complet(self, monkeypatch):
+        status = {
+            "actionsState": {"test-workload": {"actionState": "ACTION_TAKEN", "preActionState": {"replicas": 3}}},
+            "baselineCostAtTrigger": 5.0,  # deja sous le seuil de ce test
+            "correctiveActionTaken": [],
+        }
+        patch, _ = run(
+            base_spec(costThreshold=10), status, monkeypatch,
+            cost_value=2.0, deployment_replicas={"test-workload": 1},
+        )
+        assert patch.status["baselineCostAtTrigger"] is None
+
+    def test_pas_de_baseline_geree_si_aucune_action_active(self, monkeypatch):
+        status = {"consecutiveExceedances": 0}
+        patch, scale_mock = run(base_spec(costThreshold=10), status, monkeypatch, cost_value=2.0)
+        scale_mock.assert_not_called()
+        assert patch.status["thresholdExceeded"] is False
+        assert "baselineCostAtTrigger" not in patch.status
+
+
 class TestPasAssezDeDonnees:
-    def test_aucun_patch_si_pas_de_metrique(self, monkeypatch):
+    def test_aucun_patch_sauf_minCostInWindow_si_pas_de_metrique(self, monkeypatch):
         status = {}
         patch, scale_mock = run(base_spec(), status, monkeypatch, cost_value=None)
-        assert patch.status == {}
+        assert patch.status == {"minCostInWindow": None}
         scale_mock.assert_not_called()

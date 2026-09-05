@@ -75,9 +75,13 @@ spec:
             status:
               type: object
               properties:
-                currentCost:
+                minCostInWindow:
                   type: number
-                  description: The current cost associated with the policy
+                  description: >-
+                    Cout minimum observe sur evaluationWindow (min_over_time),
+                    PAS le cout instantane - nomme ainsi pour eviter toute
+                    ambiguite (anciennement currentCost, renomme le
+                    2026-09-05 car trompeur)
                 thresholdExceeded:
                   type: boolean
                   description: Indicates if the cost threshold has been exceeded
@@ -105,6 +109,20 @@ spec:
                     nouveau consecutiveCyclesThreshold cycles avant
                     d'escalader vers la cible suivante, plutot que
                     d'escalader immediatement des la confirmation initiale.
+                baselineCostAtTrigger:
+                  type: number
+                  nullable: true
+                  description: >-
+                    Cout observe au moment du TOUT PREMIER declenchement
+                    d'une campagne d'actions (avant toute reduction de
+                    capacite) - reference geleee du "cout a pleine
+                    capacite", utilisee pour decider du rollback
+                    independamment du cout observe en direct (qui est
+                    mecaniquement bas tant qu'une action est active). Le
+                    rollback n'intervient que si baselineCostAtTrigger
+                    repasse sous costThreshold (releve dans Git ou capacite
+                    normale reduite) - evite l'oscillation action/rollback
+                    decouverte le 2026-09-05 sur une policy multi-cibles.
                 actionsState:
                   type: object
                   additionalProperties:
