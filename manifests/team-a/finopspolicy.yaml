@@ -18,7 +18,7 @@ spec:
   # dernier cas, la seule sortie saine est de recalibrer costThreshold
   # (ou reduire durablement la capacite via Git), pas de laisser
   # l'auto-remediation osciller indefiniment.
-  costThreshold: 0.0257
+  costThreshold: 0.01  # TEMPORAIRE, pour la demo - sera remis a 0.0257 juste apres
   evaluationWindow: "10m"
   consecutiveCyclesThreshold: 3
   actions:
