@@ -19,12 +19,25 @@ spec:
     metadata:
       labels:
         app: finops-operator
+      annotations:
+        # Decouverte automatique par le job 'kubernetes-pods' de
+        # Prometheus (deja configure, aucune modif cote Prometheus
+        # necessaire). Expose costThreshold/minCostInWindow/actionState
+        # etc. pour le dashboard Grafana (5.6) - source de verite unique,
+        # jamais desynchronisee de Git contrairement a des seuils
+        # codes en dur dans le dashboard.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: finops-operator
       containers:
         - name: operator
           image: finops-operator:local
           imagePullPolicy: Never
+          ports:
+            - containerPort: 9100
+              name: metrics
           resources:
             requests:
               cpu: 50m

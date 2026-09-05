@@ -36,11 +36,21 @@ spec:
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards-json
+              mountPath: /var/lib/grafana/dashboards
             - name: data
               mountPath: /var/lib/grafana
       volumes:
         - name: datasources
           configMap:
             name: grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboards-json
+          configMap:
+            name: grafana-dashboard-finops-multitenant
         - name: data
           emptyDir: {}

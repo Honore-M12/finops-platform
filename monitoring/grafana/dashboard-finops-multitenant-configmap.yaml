@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-finops-multitenant
+  namespace: monitoring
+data:
+  finops-multitenant.json: |
+    {
+      "title": "FinOps - Vue multi-tenant",
+      "uid": "finops-multitenant",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "timezone": "browser",
+      "time": { "from": "now-6h", "to": "now" },
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "row",
+          "title": "Cout par equipe",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Cout reel mesure (namespace_cost_total)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "namespace_cost_total{namespace=~\"team-.*\"}",
+              "legendFormat": "{{namespace}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Cout mesure vs seuil configure (par policy)",
+          "description": "finops_min_cost_in_window et finops_cost_threshold sont exposes par l'operateur lui-meme (port /metrics) - toujours a jour avec Git, jamais de valeur codee en dur.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "finops_min_cost_in_window",
+              "legendFormat": "{{policy}} - mesure",
+              "refId": "A"
+            },
+            {
+              "expr": "finops_cost_threshold",
+              "legendFormat": "{{policy}} - seuil",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+        },
+        {
+          "id": 4,
+          "type": "row",
+          "title": "Etat de gouvernance FinOps",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Depassement actif par policy",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "finops_threshold_exceeded",
+              "legendFormat": "{{namespace}} / {{policy}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "OK", "color": "green" }, "1": { "text": "DEPASSEMENT", "color": "red" } } }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "options": { "textMode": "value_and_name", "colorMode": "background" }
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Action corrective active par cible",
+          "description": "1 = ACTION_TAKEN (scale-down en cours), 0 = NORMAL. Source : finops_action_state (operateur).",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "finops_action_state",
+              "legendFormat": "{{namespace}} / {{target}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "NORMAL", "color": "green" }, "1": { "text": "ACTION_TAKEN", "color": "orange" } } }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "options": { "textMode": "value_and_name", "colorMode": "background" }
+        },
+        {
+          "id": 7,
+          "type": "row",
+          "title": "Capacite et quotas",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Replicas par Deployment",
+          "description": "Visualise directement l'effet des actions correctives (chute de replicas) et des rollbacks (remontee).",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas{namespace=~\"team-.*\"}",
+              "legendFormat": "{{namespace}} / {{deployment}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Utilisation ResourceQuota CPU (%)",
+          "description": "Plafond dur Kyverno (defense en profondeur, independant de costThreshold - decision 5.5).",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "100 * kube_resourcequota{namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"used\"} / kube_resourcequota{namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"hard\"}",
+              "legendFormat": "{{namespace}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    }

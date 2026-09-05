@@ -69,7 +69,7 @@ def run(spec, status, monkeypatch, cost_value=15.0, deployment_replicas=None, sc
     monkeypatch.setattr(handlers, "scale_deployment", scale_mock)
 
     patch = make_patch()
-    handlers.evaluate_and_act("team-a", spec, status, patch, handlers.logging.getLogger("test"))
+    handlers.evaluate_and_act("team-a", "team-a-policy", spec, status, patch, handlers.logging.getLogger("test"))
     return patch, scale_mock
 
 

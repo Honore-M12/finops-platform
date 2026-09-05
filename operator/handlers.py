@@ -38,6 +38,7 @@ import kopf
 import requests
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from prometheus_client import start_http_server, Gauge
 
 
 PROMETHEUS_URL = "http://prometheus.monitoring.svc:9090"
@@ -46,6 +47,36 @@ SIGNATURE_ANNOTATION = "finops.yougos.io/last-handled-signature"
 CONSECUTIVE_CYCLES_DEFAULT = 3
 TIMER_INTERVAL_SECONDS = 60
 TIMER_INITIAL_DELAY_SECONDS = 30
+METRICS_PORT = 9100
+
+# Metriques exposees pour le dashboard Grafana (5.6). Source de verite
+# unique lue depuis le CR a chaque cycle - jamais desynchronisee de Git,
+# contrairement a des seuils codes en dur dans un dashboard.
+GAUGE_COST_THRESHOLD = Gauge(
+    'finops_cost_threshold', 'Seuil de cout configure (spec.costThreshold)',
+    ['namespace', 'policy'],
+)
+GAUGE_MIN_COST_IN_WINDOW = Gauge(
+    'finops_min_cost_in_window', 'Cout minimum observe sur evaluationWindow (min_over_time)',
+    ['namespace', 'policy'],
+)
+GAUGE_BASELINE_COST = Gauge(
+    'finops_baseline_cost_at_trigger',
+    'Dernier cout a pleine capacite connu (gele au declenchement) - '
+    'valeur laissee telle quelle (non remise a zero) apres un rollback, '
+    'a interpreter conjointement avec finops_action_state',
+    ['namespace', 'policy'],
+)
+GAUGE_THRESHOLD_EXCEEDED = Gauge(
+    'finops_threshold_exceeded',
+    '1 si un depassement est considere actif (voir logique de baseline), 0 sinon',
+    ['namespace', 'policy'],
+)
+GAUGE_ACTION_STATE = Gauge(
+    'finops_action_state',
+    '1 si une action corrective est active sur cette cible (ACTION_TAKEN), 0 sinon (NORMAL)',
+    ['namespace', 'policy', 'target'],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +204,7 @@ def scale_deployment(namespace: str, name: str, replicas: int, apps_client=None)
 # l'identique par on_finops_update et on_finops_timer.
 # ---------------------------------------------------------------------------
 
-def evaluate_and_act(namespace, spec, status, patch, logger):
+def evaluate_and_act(namespace, policy_name, spec, status, patch, logger):
     cost_threshold = spec['costThreshold']
     window = spec['evaluationWindow']
     actions_spec = sorted(spec.get('actions', []), key=lambda a: a['priority'])
@@ -353,6 +384,30 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
     else:
         logger.info("PAS_ASSEZ_DE_DONNEES: aucune metrique sur la fenetre, aucune action.")
 
+    # Mise a jour des metriques Prometheus (dashboard Grafana, 5.6). Lit
+    # l'etat final via patch.status quand ce cycle l'a modifie, sinon
+    # retombe sur l'etat precedent (status/variables locales deja
+    # capturees en debut de fonction) - reflete fidelement la realite
+    # meme sur les cycles qui n'ont rien change.
+    final_threshold_exceeded = patch.status.get('thresholdExceeded', status.get('thresholdExceeded', False))
+    final_baseline = patch.status.get('baselineCostAtTrigger', baseline)
+    final_actions_state = patch.status.get('actionsState', actions_state)
+
+    GAUGE_COST_THRESHOLD.labels(namespace=namespace, policy=policy_name).set(cost_threshold)
+    GAUGE_THRESHOLD_EXCEEDED.labels(namespace=namespace, policy=policy_name).set(
+        1 if final_threshold_exceeded else 0
+    )
+    if valeur is not None:
+        GAUGE_MIN_COST_IN_WINDOW.labels(namespace=namespace, policy=policy_name).set(valeur)
+    if final_baseline is not None:
+        GAUGE_BASELINE_COST.labels(namespace=namespace, policy=policy_name).set(final_baseline)
+    for a in actions_spec:
+        target = a['target']
+        etat_cible = final_actions_state.get(target, {'actionState': 'NORMAL'})
+        GAUGE_ACTION_STATE.labels(namespace=namespace, policy=policy_name, target=target).set(
+            1 if etat_cible['actionState'] == 'ACTION_TAKEN' else 0
+        )
+
 
 # ---------------------------------------------------------------------------
 # Handlers Kopf
@@ -361,13 +416,20 @@ def evaluate_and_act(namespace, spec, status, patch, logger):
 @kopf.on.startup()
 def configure(settings, logger, **kwargs):
     """Charge la configuration Kubernetes une seule fois au démarrage de
-    l'opérateur (in-cluster en production, kubeconfig local en dev)."""
+    l'opérateur (in-cluster en production, kubeconfig local en dev), et
+    démarre le serveur /metrics pour Prometheus (dashboard Grafana, 5.6)."""
     try:
         config.load_incluster_config()
         logger.info("Configuration Kubernetes chargee (in-cluster).")
     except config.ConfigException:
         config.load_kube_config()
         logger.info("Configuration Kubernetes chargee (kubeconfig local).")
+
+    try:
+        start_http_server(METRICS_PORT)
+        logger.info(f"Serveur /metrics demarre sur le port {METRICS_PORT}.")
+    except OSError as exc:
+        logger.error(f"Impossible de demarrer le serveur /metrics: {exc}")
 
 
 @kopf.on.create('finops.yougos.io', 'v1', 'finopspolicies')
@@ -387,7 +449,7 @@ def on_finops_update(spec, meta, status, patch, logger, **kwargs):
         return
 
     namespace_cible = meta['namespace']
-    evaluate_and_act(namespace_cible, spec, status, patch, logger)
+    evaluate_and_act(namespace_cible, meta['name'], spec, status, patch, logger)
 
     # Toujours mettre à jour la signature en dernier, pour que le patch de
     # status déclenché par ce même appel soit ignoré au prochain passage.
@@ -409,7 +471,7 @@ def on_finops_timer(spec, meta, status, patch, logger, **kwargs):
     est possible en theorie. Cas rare, pas de mecanisme de debounce ajoute
     pour eviter une complexite disproportionnee par rapport au risque."""
     namespace_cible = meta['namespace']
-    evaluate_and_act(namespace_cible, spec, status, patch, logger)
+    evaluate_and_act(namespace_cible, meta['name'], spec, status, patch, logger)
 
 
 @kopf.on.delete('finops.yougos.io', 'v1', 'finopspolicies')
