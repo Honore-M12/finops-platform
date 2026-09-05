@@ -173,7 +173,13 @@ def scale_deployment(
     replicas: int,
     apps_client=None
 ) -> bool:
-    """Applique un scale sur le Deployment cible. Retourne True si succès."""
+    """Applique un scale sur le Deployment cible. Retourne True si succès.
+
+    field_manager="finops-operator" explicite : permet a ArgoCD de
+    distinguer nos changements (via managedFieldsManagers dans
+    ignoreDifferences) de ceux issus de Git, sans bloquer Git pour les
+    equipes qui n'ont pas d'action corrective active (voir
+    apps/teams-applicationset.yaml)."""
     apps_client = apps_client or client.AppsV1Api()
 
     try:
@@ -181,6 +187,7 @@ def scale_deployment(
             name=name,
             namespace=namespace,
             body={"spec": {"replicas": replicas}},
+            field_manager="finops-operator",
         )
 
         return True

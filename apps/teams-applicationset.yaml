@@ -33,15 +33,20 @@ spec:
         namespace: '{{path.basename}}'
       # Meme conflit potentiel que sur team-a (voir historique) : si une
       # equipe a un test-workload pilote par l'operateur FinOps, ArgoCD
-      # ne doit pas ecraser ses scale-down/rollback. Regle generique,
-      # sans effet sur les equipes qui n'ont pas encore ce Deployment.
+      # ne doit pas ecraser ses scale-down/rollback. managedFieldsManagers
+      # (plutot que jsonPointers) cible precisement les changements faits
+      # par l'operateur (field_manager="finops-operator", voir
+      # scale_deployment dans handlers.py) - Git garde le controle total
+      # de spec.replicas pour toute equipe sans action corrective active
+      # (team-b, team-c aujourd'hui), contrairement a un jsonPointers
+      # global qui bloquerait Git pour tout le monde en permanence.
       ignoreDifferences:
         - group: apps
           kind: Deployment
           name: test-workload
           namespace: '{{path.basename}}'
-          jsonPointers:
-            - /spec/replicas
+          managedFieldsManagers:
+            - finops-operator
       syncPolicy:
         automated:
           selfHeal: true
