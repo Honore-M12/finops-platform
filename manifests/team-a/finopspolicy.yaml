@@ -4,11 +4,23 @@ metadata:
   name: team-a-policy
   namespace: team-a
 spec:
-  # Seuil calibre sur le cout mesure en regime nominal du profil API
-  # (0.01028, cf. mesure du 2026-09-04) x1.5 de marge avant de considerer
-  # un depassement comme une derive budgetaire, pas juste du bruit.
+  # ATTENTION : costThreshold ci-dessous (0.0154) a ete calibre sur le
+  # cout de l'API seule (test-workload), AVANT l'ajout du service
+  # secondaire (test-workload-batch-secondaire). Le cout total du
+  # namespace va augmenter avec ce nouveau Deployment - a RECALIBRER
+  # apres mesure reelle post-deploiement (meme methode qu'au calibrage
+  # initial : mesurer, puis costThreshold = mesure x 1.5).
   costThreshold: 0.0154
   evaluationWindow: "10m"
-  targetDeployment: test-workload
-  minReplicas: 1
   consecutiveCyclesThreshold: 3
+  actions:
+    # Priorite 1 : service non-critique, scale a 0 en premier (aucun
+    # impact utilisateur direct).
+    - target: test-workload-batch-secondaire
+      minReplicas: 0
+      priority: 1
+    # Priorite 2 : API principale, escaladee seulement si le
+    # depassement persiste malgre la degradation du service secondaire.
+    - target: test-workload
+      minReplicas: 1
+      priority: 2

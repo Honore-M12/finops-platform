@@ -7,7 +7,8 @@ metadata:
   annotations:
     # Plafond dur (ResourceQuota via Kyverno), independant du seuil
     # FinOps (costThreshold) - defense en profondeur, decision 5.5.
-    # Empreinte actuelle : 3 replicas x 100m/64Mi = 300m/192Mi.
-    # Marge de croissance jusqu'a ~5 replicas avant blocage dur.
-    finops.yougos.io/quota-cpu: "500m"
-    finops.yougos.io/quota-memory: "320Mi"
+    # Empreinte totale actuelle : API (3x100m/64Mi=300m/192Mi) + service
+    # secondaire (2x100m/64Mi=200m/128Mi) = 500m/320Mi. Quota recalibre
+    # avec la meme marge relative qu'avant l'ajout du secondaire (~1.7x).
+    finops.yougos.io/quota-cpu: "1000m"
+    finops.yougos.io/quota-memory: "640Mi"

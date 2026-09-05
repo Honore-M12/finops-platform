@@ -1,0 +1,33 @@
+# Service secondaire non-critique pour team-a (ex. traitement asynchrone
+# de faible priorite, purge de cache, tache de maintenance). Sert de
+# PREMIERE cible d'escalade de l'action corrective : on degrade d'abord
+# ce qui n'impacte pas les utilisateurs, avant de toucher a l'API
+# principale (test-workload) si le depassement persiste malgre ca.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-workload-batch-secondaire
+  namespace: team-a
+  labels:
+    finops-role: batch-non-critique
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: test-workload-batch-secondaire
+  template:
+    metadata:
+      labels:
+        app: test-workload-batch-secondaire
+    spec:
+      containers:
+        - name: batch-secondaire
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo tache non critique; sleep 5; done"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
