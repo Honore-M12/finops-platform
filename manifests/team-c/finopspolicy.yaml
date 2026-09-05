@@ -1,9 +1,0 @@
-apiVersion: finops.yougos.io/v1
-kind: FinOpsPolicy
-metadata:
-  name: team-c-policy
-  namespace: team-c
-spec:
-  # Voir team-b/finopspolicy.yaml pour le raisonnement complet.
-  costThreshold: 1000000
-  evaluationWindow: "10m"

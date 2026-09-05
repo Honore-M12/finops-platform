@@ -1,0 +1,16 @@
+apiVersion: finops.yougos.io/v1
+kind: FinOpsPolicy
+metadata:
+  name: team-c-policy
+  namespace: team-c
+spec:
+  # Seuil calibre sur le cout mesure en regime nominal du profil cache
+  # (0.01056, cf. mesure du 2026-09-04) x1.5 de marge.
+  # minReplicas: 1 - un cache doit garder au moins une instance
+  # disponible (mode degrade), contrairement a un batch suspendable
+  # (team-b).
+  costThreshold: 0.0158
+  evaluationWindow: "10m"
+  targetDeployment: test-workload
+  minReplicas: 1
+  consecutiveCyclesThreshold: 3

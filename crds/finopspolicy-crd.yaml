@@ -24,7 +24,7 @@ spec:
                 - evaluationWindow
               properties:
                 costThreshold:
-                  type: integer
+                  type: number
                   description: The cost threshold for the policy
                 evaluationWindow:
                   type: string

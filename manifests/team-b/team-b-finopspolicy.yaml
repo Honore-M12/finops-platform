@@ -1,0 +1,16 @@
+apiVersion: finops.yougos.io/v1
+kind: FinOpsPolicy
+metadata:
+  name: team-b-policy
+  namespace: team-b
+spec:
+  # Seuil calibre sur le cout mesure en regime nominal du profil
+  # worker/batch (0.01686, cf. mesure du 2026-09-04) x1.5 de marge.
+  # minReplicas: 0 - un traitement batch peut etre entierement suspendu
+  # en cas de depassement, contrairement a un service expose (team-a)
+  # qui doit garder au moins une instance disponible.
+  costThreshold: 0.0253
+  evaluationWindow: "10m"
+  targetDeployment: test-workload
+  minReplicas: 0
+  consecutiveCyclesThreshold: 3
