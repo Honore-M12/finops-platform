@@ -4,3 +4,8 @@ metadata:
   name: team-c
   labels:
     finops-managed: "true"
+  annotations:
+    # Empreinte actuelle : 2 replicas x 100m/512Mi = 200m/1024Mi.
+    # Profil cache = marge memoire genereuse, CPU reste faible.
+    finops.yougos.io/quota-cpu: "500m"
+    finops.yougos.io/quota-memory: "2Gi"

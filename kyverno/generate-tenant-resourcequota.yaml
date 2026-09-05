@@ -1,0 +1,33 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-tenant-resourcequota
+spec:
+  rules:
+  - name: resourcequota-per-tenant
+    match:
+      any:
+      - resources:
+          kinds:
+          - Namespace
+          selector:
+            matchLabels:
+              finops-managed: "true"
+    generate:
+      apiVersion: v1
+      kind: ResourceQuota
+      name: finops-tenant-quota
+      namespace: "{{request.object.metadata.name}}"
+      synchronize: true
+      generateExisting: true
+      data:
+        spec:
+          hard:
+            # Plafond dur, independant du costThreshold FinOps (defense
+            # en profondeur, decision 5.5) : ce plafond bloque au niveau
+            # de l'API server, meme si l'operateur FinOps est en panne ou
+            # n'a pas encore reagi. Valeurs lues depuis les annotations
+            # du Namespace, calibrees par profil de charge (voir
+            # namespace.yaml de chaque equipe).
+            requests.cpu: "{{request.object.metadata.annotations.\"finops.yougos.io/quota-cpu\"}}"
+            requests.memory: "{{request.object.metadata.annotations.\"finops.yougos.io/quota-memory\"}}"

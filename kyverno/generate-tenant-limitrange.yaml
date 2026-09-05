@@ -1,0 +1,38 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-tenant-limitrange
+spec:
+  rules:
+  - name: limitrange-per-tenant
+    match:
+      any:
+      - resources:
+          kinds:
+          - Namespace
+          selector:
+            matchLabels:
+              finops-managed: "true"
+    generate:
+      apiVersion: v1
+      kind: LimitRange
+      name: finops-tenant-limits
+      namespace: "{{request.object.metadata.name}}"
+      synchronize: true
+      generateExisting: true
+      data:
+        spec:
+          limits:
+            # Filet de securite : tout conteneur sans resources.requests
+            # explicites herite de ces valeurs par defaut, plutot que de
+            # rester non borne (ce qui fausserait le calcul OpenCost et
+            # le ResourceQuota du namespace). Valeurs identiques pour
+            # toutes les equipes - contrairement au ResourceQuota, ce
+            # filet n'a pas besoin d'etre differencie par profil.
+          - type: Container
+            defaultRequest:
+              cpu: "100m"
+              memory: "64Mi"
+            default:
+              cpu: "200m"
+              memory: "128Mi"

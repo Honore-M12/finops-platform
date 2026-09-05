@@ -4,3 +4,8 @@ metadata:
   name: team-b
   labels:
     finops-managed: "true"
+  annotations:
+    # Empreinte actuelle : 1 replica x 500m/256Mi. Marge de croissance
+    # jusqu'a ~3 replicas ou une instance plus grosse avant blocage dur.
+    finops.yougos.io/quota-cpu: "1500m"
+    finops.yougos.io/quota-memory: "768Mi"

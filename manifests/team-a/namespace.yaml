@@ -4,3 +4,10 @@ metadata:
   name: team-a
   labels:
     finops-managed: "true"
+  annotations:
+    # Plafond dur (ResourceQuota via Kyverno), independant du seuil
+    # FinOps (costThreshold) - defense en profondeur, decision 5.5.
+    # Empreinte actuelle : 3 replicas x 100m/64Mi = 300m/192Mi.
+    # Marge de croissance jusqu'a ~5 replicas avant blocage dur.
+    finops.yougos.io/quota-cpu: "500m"
+    finops.yougos.io/quota-memory: "320Mi"

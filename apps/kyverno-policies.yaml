@@ -1,0 +1,31 @@
+# Les policies Kyverno (kyverno/*.yaml) etaient jusqu'ici appliquees
+# manuellement, hors GitOps - meme trou de gouvernance que celui corrige
+# pour la CRD FinOpsPolicy (voir apps/crds.yaml). Corrige ici : le
+# contenu de gouvernance (les ClusterPolicy) est desormais trace et
+# synchronise via Git, comme le reste de la plateforme.
+#
+# Note de perimetre : le CONTROLEUR Kyverno lui-meme (l'installation du
+# moteur, via son propre chart Helm) reste une etape de bootstrap
+# manuelle, au meme titre que k3d ou ArgoCD lui-meme - seule la logique
+# de gouvernance (les policies) est consideree comme releve du GitOps
+# applicatif de cette plateforme.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Honore-M12/finops-platform.git
+    targetRevision: main
+    path: kyverno
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
