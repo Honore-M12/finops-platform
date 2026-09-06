@@ -38,6 +38,30 @@ spec:
           ports:
             - containerPort: 9100
               name: metrics
+          # Pas de endpoint /healthz dedie : le serveur HTTP de
+          # prometheus_client (demarre au tout debut de @kopf.on.startup,
+          # avant que Kopf ne commence a observer les FinOpsPolicy) sert
+          # de signal de sante par proxy. Limitation assumee et
+          # documentee (6.3) : ca confirme que le processus repond, pas
+          # que la boucle de reconciliation Kopf elle-meme est saine
+          # (ex. watch bloque cote API server ne serait pas detecte). Un
+          # /healthz dedie interrogeant l'etat interne de Kopf serait
+          # plus precis mais represente une complexite non prioritaire
+          # face au risque reel sur un operateur mono-replica de PFA.
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 50m

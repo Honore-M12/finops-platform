@@ -1,0 +1,43 @@
+# CI minimale (6.4) : verifie a chaque push/PR que (1) les manifestes
+# YAML du depot sont syntaxiquement valides et sans erreur de style
+# basique, et (2) la suite pytest de l'operateur passe. Volontairement
+# limitee a ce perimetre - pas de build/push d'image ni de deploiement
+# reel (pas de cluster ni de registre distant dans ce projet, coherent
+# avec le choix documente en Ch1/Ch5 d'un environnement 100% local sans
+# infrastructure CI/CD institutionnelle).
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-yaml:
+    name: Lint des manifestes YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer yamllint
+        run: pip install yamllint
+      - name: Lancer yamllint
+        run: yamllint -c .yamllint.yml .
+
+  test-operator:
+    name: Tests pytest de l'opérateur
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer les dépendances
+        working-directory: operator
+        run: pip install -r requirements-dev.txt
+      - name: Lancer pytest
+        working-directory: operator
+        run: pytest tests/ -v

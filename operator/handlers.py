@@ -32,13 +32,14 @@ partagent le même cœur de logique (evaluate_and_act) :
 
 import json
 import logging
+import time
 from datetime import datetime
 
 import kopf
 import requests
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from prometheus_client import start_http_server, Gauge
+from prometheus_client import start_http_server, Counter, Gauge, Histogram
 
 
 PROMETHEUS_URL = "http://prometheus.monitoring.svc:9090"
@@ -48,6 +49,15 @@ CONSECUTIVE_CYCLES_DEFAULT = 3
 TIMER_INTERVAL_SECONDS = 60
 TIMER_INITIAL_DELAY_SECONDS = 30
 METRICS_PORT = 9100
+
+# Résilience réseau vers Prometheus (6.2). Backoff exponentiel simple
+# (1s, 2s, 4s...) plutôt qu'une dépendance externe (tenacity) : le besoin
+# est un nombre fixe de tentatives avec délai croissant, pas de politique
+# de retry sophistiquée (jitter, circuit breaker) - complexité non
+# justifiée pour un seul appel HTTP interne au cluster.
+PROM_QUERY_TIMEOUT_SECONDS = 5
+PROM_QUERY_MAX_ATTEMPTS = 3
+PROM_QUERY_BACKOFF_BASE_SECONDS = 1
 
 # Metriques exposees pour le dashboard Grafana (5.6). Source de verite
 # unique lue depuis le CR a chaque cycle - jamais desynchronisee de Git,
@@ -76,6 +86,33 @@ GAUGE_ACTION_STATE = Gauge(
     'finops_action_state',
     '1 si une action corrective est active sur cette cible (ACTION_TAKEN), 0 sinon (NORMAL)',
     ['namespace', 'policy', 'target'],
+)
+
+# Auto-observabilité de l'opérateur lui-même (6.1) : distincte des
+# métriques ci-dessus, qui décrivent l'état FinOps de chaque tenant. Ici,
+# on décrit le fonctionnement interne de l'opérateur - cohérence
+# architecturale avec le reste de la plateforme (tout ce qui tourne dans
+# le cluster est observable via Prometheus, pas seulement les tenants).
+COUNTER_EVALUATIONS_TOTAL = Counter(
+    'finops_operator_evaluations_total',
+    "Nombre total de cycles d'evaluation executes (on_update + timer confondus)",
+    ['namespace', 'policy'],
+)
+COUNTER_EXCEEDANCES_TOTAL = Counter(
+    'finops_operator_exceedances_detected_total',
+    'Nombre total de cycles ayant detecte un DEPASSEMENT (avant tout '
+    'garde-fou anti-flapping - compte chaque cycle, pas chaque action)',
+    ['namespace', 'policy'],
+)
+HISTOGRAM_PROMETHEUS_QUERY_DURATION = Histogram(
+    'finops_operator_prometheus_query_duration_seconds',
+    "Latence des requetes PromQL vers Prometheus, tentatives de retry incluses",
+)
+COUNTER_PROMETHEUS_QUERY_ERRORS_TOTAL = Counter(
+    'finops_operator_prometheus_query_errors_total',
+    'Nombre total de tentatives de requete Prometheus ayant echoue (avant '
+    'ou apres epuisement des retries, voir le label "outcome")',
+    ['outcome'],
 )
 
 
@@ -146,15 +183,48 @@ def build_promql(namespace: str, window: str) -> str:
     )
 
 
-def query_prometheus(promql: str, prometheus_url: str = PROMETHEUS_URL) -> dict:
+def query_prometheus(
+    promql: str,
+    prometheus_url: str = PROMETHEUS_URL,
+    max_attempts: int = PROM_QUERY_MAX_ATTEMPTS,
+    backoff_base_seconds: float = PROM_QUERY_BACKOFF_BASE_SECONDS,
+) -> dict:
+    """Interroge Prometheus avec backoff exponentiel (6.2).
+
+    Une indisponibilite momentanee de Prometheus (redemarrage de pod,
+    pic de charge) ne doit pas se traduire immediatement par un cycle
+    PAS_ASSEZ_DE_DONNEES : jusqu'a `max_attempts` tentatives, avec un
+    delai croissant (backoff_base_seconds, 2x, 4x...) entre chacune.
+    Abandon silencieux (resultat vide) seulement apres epuisement des
+    tentatives - le comportement en aval (evaluate_cost) reste inchange,
+    aucune nouvelle branche de decision introduite."""
     url = f"{prometheus_url}/api/v1/query"
+    start = time.monotonic()
     try:
-        response = requests.get(url, params={"query": promql}, timeout=5)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        logging.error(f"Appel Prometheus echoue: {exc}")
-        return {"data": {"result": []}}
-    return response.json()
+        for tentative in range(1, max_attempts + 1):
+            try:
+                response = requests.get(
+                    url, params={"query": promql}, timeout=PROM_QUERY_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.RequestException as exc:
+                COUNTER_PROMETHEUS_QUERY_ERRORS_TOTAL.labels(
+                    outcome="retry" if tentative < max_attempts else "exhausted"
+                ).inc()
+                if tentative == max_attempts:
+                    logging.error(
+                        f"Appel Prometheus echoue apres {max_attempts} tentatives: {exc}"
+                    )
+                    return {"data": {"result": []}}
+                delai = backoff_base_seconds * (2 ** (tentative - 1))
+                logging.warning(
+                    f"Appel Prometheus echoue (tentative {tentative}/{max_attempts}): "
+                    f"{exc} - nouvelle tentative dans {delai}s."
+                )
+                time.sleep(delai)
+    finally:
+        HISTOGRAM_PROMETHEUS_QUERY_DURATION.observe(time.monotonic() - start)
 
 
 # ---------------------------------------------------------------------------
@@ -210,10 +280,15 @@ def evaluate_and_act(namespace, policy_name, spec, status, patch, logger):
     actions_spec = sorted(spec.get('actions', []), key=lambda a: a['priority'])
     cycles_threshold = spec.get('consecutiveCyclesThreshold', CONSECUTIVE_CYCLES_DEFAULT)
 
+    COUNTER_EVALUATIONS_TOTAL.labels(namespace=namespace, policy=policy_name).inc()
+
     promql = build_promql(namespace, window)
     reponse = query_prometheus(promql)
     valeur = extraire_valeur(reponse)
     decision = evaluate_cost(valeur, cost_threshold)
+
+    if decision == "DEPASSEMENT":
+        COUNTER_EXCEEDANCES_TOTAL.labels(namespace=namespace, policy=policy_name).inc()
 
     consecutive = status.get('consecutiveExceedances', 0)
     last_action_at_cycle = status.get('lastActionAtCycle', 0)

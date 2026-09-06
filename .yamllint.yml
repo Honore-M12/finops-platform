@@ -1,0 +1,29 @@
+# Configuration yamllint pour ce depot (6.4 - CI minimale).
+#
+# Base "default" de yamllint, assouplie pour des manifestes Kubernetes :
+# les lignes longues (selectors, annotations, PromQL en ligne) et les
+# commentaires explicatifs abondants (choix architecturaux documentes
+# directement dans les manifestes, voir principe d'honnete du rapport)
+# sont volontairement autorises plutot que d'etre traites comme des
+# erreurs de style.
+extends: default
+
+rules:
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  document-start: disable
+  # Le style d'indentation des manifestes existants melange sequences
+  # indentees et non-indentees sous une cle mapping (les deux sont du
+  # YAML valide) - resultat de plusieurs sources/generateurs au fil du
+  # projet (Kyverno, Grafana, main). Reformater retroactivement tous les
+  # manifestes pour une seule convention est hors perimetre d'une CI
+  # minimale (6.4) : le lint garde sa valeur (syntaxe, cles dupliquees,
+  # espaces en fin de ligne) sans forcer un chantier de mise en forme
+  # sans rapport avec la gouvernance FinOps elle-meme.
+  indentation: disable
+  truthy:
+    # Kyverno/Grafana utilisent parfois "yes"/"no" ou des booleens non
+    # quotes issus de config tierces copiees telles quelles.
+    check-keys: false

@@ -503,3 +503,102 @@ class TestPasAssezDeDonnees:
         patch, scale_mock = run(base_spec(), status, monkeypatch, cost_value=None)
         assert patch.status == {"minCostInWindow": None}
         scale_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Résilience réseau vers Prometheus - backoff/retry (6.2)
+#
+# time.sleep est mocke pour ne pas ralentir la suite (les delais reels de
+# backoff ne sont pas ce qui est teste ici, seulement le comportement :
+# nombre de tentatives, arret au premier succes, resultat vide apres
+# epuisement).
+# ---------------------------------------------------------------------------
+
+class TestQueryPrometheusBackoff:
+    def test_succes_du_premier_coup_une_seule_tentative(self, monkeypatch):
+        sleep_mock = Mock()
+        monkeypatch.setattr(handlers.time, "sleep", sleep_mock)
+        get_mock = Mock(return_value=Mock(
+            raise_for_status=Mock(), json=Mock(return_value={"data": {"result": ["ok"]}}),
+        ))
+        monkeypatch.setattr(handlers.requests, "get", get_mock)
+
+        resultat = handlers.query_prometheus("some_query")
+
+        assert resultat == {"data": {"result": ["ok"]}}
+        get_mock.assert_called_once()
+        sleep_mock.assert_not_called()
+
+    def test_echec_puis_succes_reussit_sans_epuiser_les_tentatives(self, monkeypatch):
+        sleep_mock = Mock()
+        monkeypatch.setattr(handlers.time, "sleep", sleep_mock)
+        reponse_ok = Mock(raise_for_status=Mock(), json=Mock(return_value={"data": {"result": ["ok"]}}))
+        get_mock = Mock(side_effect=[handlers.requests.RequestException("boom"), reponse_ok])
+        monkeypatch.setattr(handlers.requests, "get", get_mock)
+
+        resultat = handlers.query_prometheus("some_query")
+
+        assert resultat == {"data": {"result": ["ok"]}}
+        assert get_mock.call_count == 2
+        sleep_mock.assert_called_once_with(handlers.PROM_QUERY_BACKOFF_BASE_SECONDS)
+
+    def test_echec_persistant_epuise_les_tentatives_et_retourne_resultat_vide(self, monkeypatch):
+        sleep_mock = Mock()
+        monkeypatch.setattr(handlers.time, "sleep", sleep_mock)
+        get_mock = Mock(side_effect=handlers.requests.RequestException("boom"))
+        monkeypatch.setattr(handlers.requests, "get", get_mock)
+
+        resultat = handlers.query_prometheus("some_query", max_attempts=3)
+
+        assert resultat == {"data": {"result": []}}
+        assert get_mock.call_count == 3
+        # backoff exponentiel : attendu entre la 1ere et la 2eme, puis entre
+        # la 2eme et la 3eme tentative (pas apres la derniere, on abandonne)
+        assert sleep_mock.call_count == 2
+
+    def test_delai_de_backoff_double_a_chaque_tentative(self, monkeypatch):
+        sleep_mock = Mock()
+        monkeypatch.setattr(handlers.time, "sleep", sleep_mock)
+        get_mock = Mock(side_effect=handlers.requests.RequestException("boom"))
+        monkeypatch.setattr(handlers.requests, "get", get_mock)
+
+        handlers.query_prometheus("some_query", max_attempts=3, backoff_base_seconds=1)
+
+        sleep_mock.assert_any_call(1)
+        sleep_mock.assert_any_call(2)
+
+
+# ---------------------------------------------------------------------------
+# Auto-observabilite de l'operateur (6.1)
+# ---------------------------------------------------------------------------
+
+class TestAutoObservabilite:
+    def test_chaque_cycle_incremente_le_compteur_d_evaluations(self, monkeypatch):
+        avant = handlers.COUNTER_EVALUATIONS_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        run(base_spec(costThreshold=10), {}, monkeypatch, cost_value=2.0)
+        apres = handlers.COUNTER_EVALUATIONS_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        assert apres == avant + 1
+
+    def test_un_depassement_incremente_le_compteur_dedie(self, monkeypatch):
+        avant = handlers.COUNTER_EXCEEDANCES_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        run(base_spec(costThreshold=10), {}, monkeypatch, cost_value=15.0)
+        apres = handlers.COUNTER_EXCEEDANCES_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        assert apres == avant + 1
+
+    def test_un_cycle_ok_n_incremente_pas_le_compteur_de_depassements(self, monkeypatch):
+        avant = handlers.COUNTER_EXCEEDANCES_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        run(base_spec(costThreshold=10), {}, monkeypatch, cost_value=2.0)
+        apres = handlers.COUNTER_EXCEEDANCES_TOTAL.labels(
+            namespace="team-a", policy="team-a-policy",
+        )._value.get()
+        assert apres == avant
