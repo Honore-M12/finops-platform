@@ -128,8 +128,8 @@ data:
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
-              "expr": "kube_deployment_status_replicas{namespace=~\"team-.*\"}",
-              "legendFormat": "{{namespace}} / {{deployment}}",
+              "expr": "kube_deployment_status_replicas{exported_namespace=~\"team-.*\"}",
+              "legendFormat": "{{exported_namespace}} / {{deployment}}",
               "refId": "A"
             }
           ],
@@ -144,8 +144,8 @@ data:
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
-              "expr": "100 * kube_resourcequota{namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"used\"} / kube_resourcequota{namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"hard\"}",
-              "legendFormat": "{{namespace}}",
+              "expr": "100 * kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"used\"} / kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"hard\"}",
+              "legendFormat": "{{exported_namespace}}",
               "refId": "A"
             }
           ],
