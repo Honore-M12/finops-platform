@@ -11,6 +11,14 @@ data:
     rule_files:
       - /etc/prometheus/rules.yml
 
+    # Route les alertes actives (declenchees par les regles 'alert:' de
+    # rules.yml) vers Alertmanager, qui gere le groupement/routage vers
+    # les recepteurs (5.7).
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager.monitoring.svc:9093']
+
     scrape_configs:
       # Prometheus se scrape lui-meme (metriques internes de sante)
       - job_name: 'prometheus'
@@ -86,3 +94,54 @@ data:
                 +
                 container_memory_allocation_bytes * on (node) group_left() node_ram_hourly_cost / (1024*1024*1024)
               )
+
+      # Alertes de gouvernance FinOps (5.7), basees sur les metriques
+      # exposees par l'operateur lui-meme (finops_*, voir handlers.py et
+      # 5.6) - jamais de seuil duplique/code en dur ici, uniquement des
+      # comparaisons sur l'etat deja calcule par l'operateur.
+      - name: finops-alerts
+        rules:
+          # Le "for: 3m" ici est une couche de confirmation INDEPENDANTE
+          # de consecutiveCyclesThreshold cote operateur : ce dernier
+          # decide quand AGIR, cette alerte decide quand PREVENIR un
+          # humain - utile aussi pour les policies mal configurees (sans
+          # spec.actions), ou l'operateur ne peut jamais agir tout seul.
+          - alert: FinOpsBudgetExceeded
+            expr: finops_threshold_exceeded == 1
+            for: 3m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Depassement de budget sur {{ $labels.exported_namespace }} ({{ $labels.policy }})"
+              description: >-
+                Le namespace {{ $labels.exported_namespace }} (policy
+                {{ $labels.policy }}) depasse costThreshold depuis au
+                moins 3 minutes.
+
+          - alert: FinOpsCorrectiveActionActive
+            expr: finops_action_state == 1
+            for: 0m
+            labels:
+              severity: info
+            annotations:
+              summary: "Action corrective active sur {{ $labels.exported_namespace }} / {{ $labels.target }}"
+              description: >-
+                L'operateur FinOps a scale-down {{ $labels.target }}
+                dans {{ $labels.exported_namespace }} suite a un
+                depassement confirme.
+
+          # Une action active depuis 30+ minutes signale probablement un
+          # depassement structurel (voir finops_baseline_cost_at_trigger)
+          # ou un conflit non resolu (voir logs de l'operateur) -
+          # investigation humaine recommandee plutot qu'attente passive.
+          - alert: FinOpsActionStuck
+            expr: finops_action_state == 1
+            for: 30m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Action corrective bloquee depuis 30+ min sur {{ $labels.exported_namespace }} / {{ $labels.target }}"
+              description: >-
+                Possible depassement structurel du budget ou conflit non
+                resolu - verifier finops_baseline_cost_at_trigger et les
+                logs de l'operateur avant d'intervenir manuellement.

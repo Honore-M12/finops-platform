@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    route:
+      group_by: ['policy']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+      receiver: 'default'
+
+    receivers:
+      # Recepteur par defaut : les alertes restent visibles dans l'UI
+      # Alertmanager (port-forward svc/alertmanager 9093:9093) et dans son
+      # API. Pas de webhook externe configure ici - projet 100% local sans
+      # budget institutionnel (cf. Ch1), pas de compte Slack/SMTP a gerer
+      # pour une demonstration. Le connecteur ci-dessous montre comment
+      # brancher un vrai canal en production, sans le configurer.
+      - name: 'default'
+        # webhook_configs:
+        #   - url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+        #     send_resolved: true
