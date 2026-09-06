@@ -67,12 +67,13 @@ data:
           "id": 5,
           "type": "stat",
           "title": "Depassement actif par policy",
+          "description": "exported_namespace (pas namespace) car Prometheus reecrit 'namespace' avec le namespace du pod scrape (finops-system) - collision de label standard, notre valeur d'origine est renommee automatiquement.",
           "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
               "expr": "finops_threshold_exceeded",
-              "legendFormat": "{{namespace}} / {{policy}}",
+              "legendFormat": "{{exported_namespace}} / {{policy}}",
               "refId": "A"
             }
           ],
@@ -91,13 +92,13 @@ data:
           "id": 6,
           "type": "stat",
           "title": "Action corrective active par cible",
-          "description": "1 = ACTION_TAKEN (scale-down en cours), 0 = NORMAL. Source : finops_action_state (operateur).",
+          "description": "1 = ACTION_TAKEN (scale-down en cours), 0 = NORMAL. Source : finops_action_state (operateur). exported_namespace (pas namespace) pour la meme raison que le panel precedent.",
           "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
               "expr": "finops_action_state",
-              "legendFormat": "{{namespace}} / {{target}}",
+              "legendFormat": "{{exported_namespace}} / {{target}}",
               "refId": "A"
             }
           ],
