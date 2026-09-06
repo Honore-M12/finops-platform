@@ -144,7 +144,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
-              "expr": "100 * kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"used\"} / kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"hard\"}",
+              "expr": "100 * kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"used\"} / ignoring(type) kube_resourcequota{exported_namespace=~\"team-.*\", resource=\"requests.cpu\", type=\"hard\"}",
               "legendFormat": "{{exported_namespace}}",
               "refId": "A"
             }
