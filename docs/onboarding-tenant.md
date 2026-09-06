@@ -63,7 +63,7 @@ spec:
 ```
 
 **Un ou plusieurs `Deployment`** représentant la charge réelle du
-tenant (voir `manifests/team-a/team-a-test-workload.yaml` pour un
+tenant (voir `manifests/team-a/test-workload.yaml` pour un
 exemple de profil « API stateless », ou `team-b`/`team-c` pour des
 profils batch/cache).
 
