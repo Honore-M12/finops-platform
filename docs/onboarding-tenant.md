@@ -1,13 +1,12 @@
 # Onboarding d'un nouveau tenant
 
-Grâce au `ApplicationSet` (`apps/teams-applicationset.yaml`), ajouter un
-tenant à la gouvernance FinOps ne demande **aucune modification dans
-`apps/`** : il suffit d'ajouter un dossier `manifests/team-<nom>/` dans
-Git. ArgoCD le découvre automatiquement au prochain cycle de sync (par
-défaut, sync automatique — pas besoin de déclencher quoi que ce soit
-manuellement).
+Grâce à l'`ApplicationSet` (`apps/teams-applicationset.yaml`), ajouter un
+tenant à la gouvernance FinOps ne demande aucune modification dans
+`apps/` : il suffit d'ajouter un dossier `manifests/team-<nom>/` dans
+Git. ArgoCD le découvre automatiquement au prochain cycle de sync (sync
+automatique par défaut, rien à déclencher manuellement).
 
-## Étape 1 — Mesurer le coût nominal du profil de charge
+## Étape 1. Mesurer le coût nominal du profil de charge
 
 Avant de fixer un `costThreshold`, mesurer le coût réel du workload en
 régime nominal (sans aucune action corrective active), sur un intervalle
@@ -17,12 +16,12 @@ représentatif :
 namespace_cost_total{namespace="team-<nom>", cluster="finops-lab"}
 ```
 
-Le seuil retenu dans ce projet est systématiquement **coût nominal
-mesuré × 1.5** de marge (voir les commentaires dans les
+Le seuil retenu dans ce projet est systématiquement coût nominal mesuré
+multiplié par 1.5 de marge (voir les commentaires dans les
 `finopspolicy.yaml` existants pour la méthode exacte). Documenter ce
 calcul dans un commentaire du fichier, pas seulement la valeur brute.
 
-## Étape 2 — Créer les manifestes du tenant
+## Étape 2. Créer les manifestes du tenant
 
 Créer `manifests/team-<nom>/` avec au minimum :
 
@@ -63,33 +62,32 @@ spec:
 ```
 
 **Un ou plusieurs `Deployment`** représentant la charge réelle du
-tenant (voir `manifests/team-a/test-workload.yaml` pour un
-exemple de profil « API stateless », ou `team-b`/`team-c` pour des
-profils batch/cache).
+tenant (voir `manifests/team-a/test-workload.yaml` pour un exemple de
+profil API stateless, ou `team-b`/`team-c` pour des profils batch/cache).
 
-## Étape 3 — Vérifier après sync
+## Étape 3. Vérifier après sync
 
 Une fois le commit poussé sur `main` :
 
 1. `kubectl get application -n argocd` doit faire apparaître une
    nouvelle Application `finopspolicy-team-<nom>`, `Synced`/`Healthy`.
-2. `kubectl get resourcequota,limitrange -n team-<nom>` doit montrer les
-   objets générés automatiquement par Kyverno (peut prendre quelques
-   secondes après la création du `Namespace`).
+2. `kubectl get resourcequota,limitrange,networkpolicy -n team-<nom>`
+   doit montrer les objets générés automatiquement par Kyverno (peut
+   prendre quelques secondes après la création du `Namespace`).
 3. Le dashboard Grafana « FinOps - Vue multi-tenant » doit faire
    apparaître le nouveau tenant dans les panels labellisés par
-   `namespace`/`exported_namespace` (voir le piège de collision de label
-   documenté dans le code des dashboards si une métrique semble
+   `exported_namespace` (voir le piège de collision de label documenté
+   dans les descriptions de panels du dashboard, si une métrique semble
    manquante).
 
 ## Points d'attention connus
 
 - **Le `Deployment` cible d'une action corrective** doit exister avant
-  ou en même temps que le `FinOpsPolicy` qui le référence — sinon
-  l'opérateur logue une erreur (« Deployment introuvable ») sans
-  bloquer le reste de la boucle.
+  ou en même temps que le `FinOpsPolicy` qui le référence, sinon
+  l'opérateur logue une erreur (Deployment introuvable) sans bloquer le
+  reste de la boucle.
 - **Le label `finops-managed: "true"`** est ce qui déclenche la
-  génération Kyverno ; l'oublier laisse le tenant sans quota, sans
+  génération Kyverno. L'oublier laisse le tenant sans quota, sans
   erreur visible immédiate.
 - **Le conflit ArgoCD/opérateur sur `spec.replicas`** est déjà couvert
   pour les noms de `Deployment` `test-workload` et
