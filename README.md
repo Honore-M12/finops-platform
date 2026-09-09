@@ -29,16 +29,16 @@ GitOps.
 
 ## Comment ça marche
 
+```
 Git (source de vérité)
 └─ ArgoCD (App-of-Apps : apps/ → un fichier/générateur par composant)
-├─ CRD FinOpsPolicy (apps/crds.yaml)
-├─ ClusterPolicy Kyverno (apps/kyverno-policies.yaml)
-├─ Opérateur Kopf (apps/operator.yaml)
-├─ Monitoring : Prometheus, Grafana, Alertmanager, OpenCost,
-│ kube-state-metrics (apps/monitoring.yaml, apps/opencost.yaml)
-└─ Tenants (apps/teams-applicationset.yaml, un par
-manifests/team-*/)
-
+   ├─ CRD FinOpsPolicy (apps/crds.yaml)
+   ├─ ClusterPolicy Kyverno (apps/kyverno-policies.yaml)
+   ├─ Opérateur Kopf (apps/operator.yaml)
+   ├─ Monitoring : Prometheus, Grafana, Alertmanager, OpenCost,
+   │  kube-state-metrics (apps/monitoring.yaml, apps/opencost.yaml)
+   └─ Tenants (apps/teams-applicationset.yaml, un par manifests/team-*/)
+```
 
 Trois équipes tournent aujourd'hui sur la plateforme, avec des profils
 de charge volontairement différents : `team-a` (API stateless, nginx,
